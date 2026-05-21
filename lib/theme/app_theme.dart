@@ -19,12 +19,18 @@ class AppTheme {
   static const Color textSecondary = Color(0xFF6B7A99);
 
   static const List<Color> chartColors = [
-    Color(0xFF1A56DB),
-    Color(0xFF00C9A7),
-    Color(0xFFFF6B6B),
-    Color(0xFFFFB347),
-    Color(0xFF9B59B6),
-    Color(0xFF3498DB),
+    Color(0xFF1A56DB), // Blue
+    Color(0xFF00C9A7), // Teal
+    Color(0xFFEF4444), // Red
+    Color(0xFFF59E0B), // Orange
+    Color(0xFF8B5CF6), // Purple
+    Color(0xFF10B981), // Emerald
+    Color(0xFFEC4899), // Pink
+    Color(0xFF14B8A6), // Cyan
+    Color(0xFFF97316), // Orange Dark
+    Color(0xFF6366F1), // Indigo
+    Color(0xFF22C55E), // Green
+    Color(0xFFEA580C), // Deep Orange
   ];
 
   // ─── GRADIENTS ───────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ class _State extends State<MedicineDashboardScreen> {
   Future<void> _load() async {
     setState(() => _isLoading = true);
     _all = await _db.getMedicines();
-    _usageStat = await _db.getMedicineUsageStat(
+    _usageStat = await _db.getVisitMedicineUsageStat(
       startDate: _fmt(_usageStart),
       endDate: _fmt(_usageEnd),
     );
@@ -501,6 +501,17 @@ class _StokTable extends StatelessWidget {
                 ),
               ),
               Expanded(
+                flex: 3,
+                child: Text(
+                  'Jenis Obat',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+              ),
+              Expanded(
                 flex: 2,
                 child: Text(
                   'Stok',
@@ -543,6 +554,17 @@ class _StokTable extends StatelessWidget {
                   flex: 3,
                   child: Text(
                     m.kategori,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    m.satuan,
                     style: const TextStyle(
                       fontSize: 11,
                       color: AppTheme.textSecondary,
