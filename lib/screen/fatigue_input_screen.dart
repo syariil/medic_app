@@ -5,19 +5,20 @@ import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../components/form/labeled_text_field.dart';
 import '../components/oh_shared.dart';
+import 'base_input_screen.dart';
+import '../validators.dart';
 
-class FatigueInputScreen extends StatefulWidget {
-  final Fatigue? record;
-  const FatigueInputScreen({super.key, this.record});
+class FatigueInputScreen extends InputScreenBase<Fatigue> {
+  const FatigueInputScreen({super.key, Fatigue? record})
+    : super(entity: record);
 
   @override
   State<FatigueInputScreen> createState() => _FatigueInputScreenState();
 }
 
-class _FatigueInputScreenState extends State<FatigueInputScreen> {
-  final _formKey = GlobalKey<FormState>();
+class _FatigueInputScreenState
+    extends _InputScreenBaseState<Fatigue, FatigueInputScreen> {
   final _db = DatabaseService();
-  bool _isSaving = false;
 
   final _tanggal = TextEditingController();
   final _site = TextEditingController();
@@ -38,13 +39,62 @@ class _FatigueInputScreenState extends State<FatigueInputScreen> {
   String _shift = 'Pagi';
   String _kriteria = 'Fit';
 
-  bool get _isEdit => widget.record != null;
+  @override
+  void initState() {
+    super.initState();
+    if (isEdit) {
+      final r = widget.entity as Fatigue;
+      _tanggal.text = r.tanggal;
+      _site.text = r.site;
+      _nama.text = r.nama;
+      _posisi.text = r.posisi;
+      _departemen.text = r.departemen;
+      _jamTidur.text = r.jumlahJamTidur.toString();
+      final td = r.tekananDarah.split('/');
+      _tdSistolik.text = td.isNotEmpty ? td[0] : '';
+      _tdDiastolik.text = td.length > 1 ? td[1] : '';
+      _nadi.text = r.nadi.toString();
+      _pernapasan.text = r.pernapasan.toString();
+      _suhu.text = r.suhuBadan.toString();
+      _obat.text = r.obatDikonsumsi;
+      _efekObat.text = r.efekObat;
+      _pembatasan.text = r.pembatasanKerja;
+      _keterangan.text = r.keterangan;
+      _shift = r.shift;
+      _kriteria = r.kriteria;
+    } else {
+      _pembatasan.text = kPembatasanDefault;
+    }
+  }
+
+  @override
+  void disposeControllers() {
+    for (final c in [
+      _tanggal,
+      _site,
+      _nama,
+      _posisi,
+      _departemen,
+      _jamTidur,
+      _tdSistolik,
+      _tdDiastolik,
+      _nadi,
+      _pernapasan,
+      _suhu,
+      _obat,
+      _efekObat,
+      _pembatasan,
+      _keterangan,
+    ]) {
+      c.dispose();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    if (_isEdit) {
-      final r = widget.record!;
+    if (isEdit) {
+      final r = widget.entity as Fatigue;
       _tanggal.text = r.tanggal;
       _site.text = r.site;
       _nama.text = r.nama;
@@ -102,12 +152,10 @@ class _FatigueInputScreenState extends State<FatigueInputScreen> {
     if (d != null) _tanggal.text = d.toIso8601String().substring(0, 10);
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isSaving = true);
-
+  @override
+  Future<void> saveEntity() async {
     final record = Fatigue(
-      id: widget.record?.id,
+      id: widget.entity?.id,
       tanggal: _tanggal.text.trim(),
       site: _site.text.trim(),
       nama: _nama.text.trim(),
@@ -126,29 +174,10 @@ class _FatigueInputScreenState extends State<FatigueInputScreen> {
       keterangan: _keterangan.text.trim(),
     );
 
-    try {
-      _isEdit
-          ? await _db.updateFatigue(record)
-          : await _db.insertFatigue(record);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isEdit ? 'Data diperbarui' : 'Fatigue disimpan'),
-          backgroundColor: AppTheme.accent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
-      if (Navigator.canPop(context)) Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal: $e'), backgroundColor: Colors.red),
-        );
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+    if (isEdit) {
+      await _db.updateFatigue(record);
+    } else {
+      await _db.insertFatigue(record);
     }
   }
 
@@ -159,12 +188,12 @@ class _FatigueInputScreenState extends State<FatigueInputScreen> {
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
-          key: _formKey,
+          key: formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _isEdit ? 'Edit Fatigue' : 'Input Fatigue',
+                isEdit ? 'Edit Fatigue' : 'Input Fatigue',
                 style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -466,13 +495,13 @@ class _FatigueInputScreenState extends State<FatigueInputScreen> {
 
   Widget _buildButtons() => Row(
     children: [
-      if (!_isEdit) ...[
+      if (!isEdit) ...[
         Expanded(
           child: OutlinedButton(
             onPressed: _isSaving
                 ? null
                 : () {
-                    _formKey.currentState?.reset();
+                    formKey.currentState?.reset();
                     for (final c in [
                       _tanggal,
                       _site,
@@ -511,8 +540,8 @@ class _FatigueInputScreenState extends State<FatigueInputScreen> {
       Expanded(
         flex: 2,
         child: ElevatedButton.icon(
-          onPressed: _isSaving ? null : _submit,
-          icon: _isSaving
+          onPressed: isSaving ? null : submit,
+          icon: isSaving
               ? const SizedBox(
                   width: 16,
                   height: 16,
@@ -522,7 +551,7 @@ class _FatigueInputScreenState extends State<FatigueInputScreen> {
                   ),
                 )
               : const Icon(Icons.save_rounded, size: 18),
-          label: Text(_isEdit ? 'Update' : 'Simpan'),
+          label: Text(isEdit ? 'Update' : 'Simpan'),
         ),
       ),
     ],

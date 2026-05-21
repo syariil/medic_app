@@ -4,19 +4,20 @@ import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../components/form/labeled_text_field.dart';
 import '../components/oh_shared.dart';
+import 'base_input_screen.dart';
+import '../validators.dart';
 
-class DrugTestInputScreen extends StatefulWidget {
-  final DrugTest? drugTest;
-  const DrugTestInputScreen({super.key, this.drugTest});
+class DrugTestInputScreen extends InputScreenBase<DrugTest> {
+  const DrugTestInputScreen({super.key, DrugTest? drugTest})
+    : super(entity: drugTest);
 
   @override
   State<DrugTestInputScreen> createState() => _DrugTestInputScreenState();
 }
 
-class _DrugTestInputScreenState extends State<DrugTestInputScreen> {
-  final _formKey = GlobalKey<FormState>();
+class _DrugTestInputScreenState
+    extends _InputScreenBaseState<DrugTest, DrugTestInputScreen> {
   final _db = DatabaseService();
-  bool _isSaving = false;
 
   final _tanggal = TextEditingController();
   final _site = TextEditingController();
@@ -32,7 +33,39 @@ class _DrugTestInputScreenState extends State<DrugTestInputScreen> {
   String _bzo = 'Negatif';
   String _hasil = 'Negatif';
 
-  bool get _isEdit => widget.drugTest != null;
+  @override
+  void initState() {
+    super.initState();
+    if (isEdit) {
+      final d = widget.entity as DrugTest;
+      _tanggal.text = d.tanggal;
+      _site.text = d.site;
+      _nama.text = d.nama;
+      _posisi.text = d.posisi;
+      _departemen.text = d.departemen;
+      _keterangan.text = d.keterangan;
+      _amp = d.amp;
+      _met = d.met;
+      _thc = d.thc;
+      _coc = d.coc;
+      _bzo = d.bzo;
+      _hasil = d.hasil;
+    }
+  }
+
+  @override
+  void disposeControllers() {
+    for (final c in [
+      _tanggal,
+      _site,
+      _nama,
+      _posisi,
+      _departemen,
+      _keterangan,
+    ]) {
+      c.dispose();
+    }
+  }
 
   @override
   void initState() {
@@ -87,12 +120,10 @@ class _DrugTestInputScreenState extends State<DrugTestInputScreen> {
     if (d != null) _tanggal.text = d.toIso8601String().substring(0, 10);
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isSaving = true);
-
+  @override
+  Future<void> saveEntity() async {
     final dt = DrugTest(
-      id: widget.drugTest?.id,
+      id: widget.entity?.id,
       tanggal: _tanggal.text.trim(),
       site: _site.text.trim(),
       nama: _nama.text.trim(),
@@ -107,27 +138,10 @@ class _DrugTestInputScreenState extends State<DrugTestInputScreen> {
       keterangan: _keterangan.text.trim(),
     );
 
-    try {
-      _isEdit ? await _db.updateDrugTest(dt) : await _db.insertDrugTest(dt);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isEdit ? 'Data diperbarui' : 'Tes narkoba disimpan'),
-          backgroundColor: AppTheme.accent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
-      if (Navigator.canPop(context)) Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal: $e'), backgroundColor: Colors.red),
-        );
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+    if (isEdit) {
+      await _db.updateDrugTest(dt);
+    } else {
+      await _db.insertDrugTest(dt);
     }
   }
 
@@ -138,12 +152,12 @@ class _DrugTestInputScreenState extends State<DrugTestInputScreen> {
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
-          key: _formKey,
+          key: formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _isEdit ? 'Edit Tes Narkoba' : 'Input Tes Narkoba',
+                isEdit ? 'Edit Tes Narkoba' : 'Input Tes Narkoba',
                 style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -411,7 +425,7 @@ class _DrugTestInputScreenState extends State<DrugTestInputScreen> {
 
   Widget _buildButtons() => Row(
     children: [
-      if (!_isEdit) ...[
+      if (!isEdit) ...[
         Expanded(
           child: OutlinedButton(
             onPressed: _isSaving

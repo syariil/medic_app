@@ -54,13 +54,22 @@ class DatabaseService {
     VisitPrescription p,
     List<VisitPrescriptionItem> items,
   ) => _rxRepo.insertWithItems(p, items);
+  
   Future<List<VisitPrescriptionWithItems>> getVisitPrescriptions(int vid) =>
       _rxRepo.getByVisit(vid);
+  
+  /// Batch query untuk multiple visit IDs - efficient N+1 solution
+  Future<Map<int, List<VisitPrescriptionWithItems>>> getVisitPrescriptionsByIds(
+    List<int> visitIds,
+  ) => _rxRepo.getByVisitIds(visitIds);
+  
   Future<void> updateVisitPrescription(
     VisitPrescription p,
     List<VisitPrescriptionItem> items,
   ) => _rxRepo.updateWithItems(p, items);
+  
   Future<void> deleteVisitPrescriptions(int vid) => _rxRepo.deleteByVisit(vid);
+  
   Future<Map<String, int>> getVisitMedicineUsageStat({
     String? startDate,
     String? endDate,

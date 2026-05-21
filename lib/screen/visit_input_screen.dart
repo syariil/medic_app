@@ -8,19 +8,17 @@ import '../theme/app_theme.dart';
 import '../components/form/labeled_text_field.dart';
 import '../components/form/prescription_form.dart';
 import '../components/oh_shared.dart';
+import 'base_input_screen.dart';
 
-class VisitInputScreen extends StatefulWidget {
-  final Visit? visit;
-  const VisitInputScreen({super.key, this.visit});
+class VisitInputScreen extends InputScreenBase<Visit> {
+  const VisitInputScreen({super.key, Visit? visit}) : super(entity: visit);
 
   @override
   State<VisitInputScreen> createState() => _VisitInputScreenState();
 }
 
-class _VisitInputScreenState extends State<VisitInputScreen> {
-  final _formKey = GlobalKey<FormState>();
+class _VisitInputScreenState extends _InputScreenBaseState<Visit, VisitInputScreen> {
   final _db = DatabaseService();
-  bool _isSaving = false;
 
   // Controllers
   final _tanggal = TextEditingController();
@@ -47,14 +45,12 @@ class _VisitInputScreenState extends State<VisitInputScreen> {
   // Resep existing (edit mode)
   VisitPrescriptionWithItems? _existingRx;
 
-  bool get _isEdit => widget.visit != null;
-
   @override
   void initState() {
     super.initState();
     _loadMedicines();
-    if (_isEdit) {
-      final v = widget.visit!;
+    if (isEdit) {
+      final v = widget.entity!;
       _tanggal.text = v.tanggal;
       _site.text = v.site;
       _nama.text = v.nama;
@@ -75,7 +71,7 @@ class _VisitInputScreenState extends State<VisitInputScreen> {
   }
 
   @override
-  void dispose() {
+  void disposeControllers() {
     for (final c in [
       _tanggal,
       _site,
@@ -94,7 +90,6 @@ class _VisitInputScreenState extends State<VisitInputScreen> {
     ]) {
       c.dispose();
     }
-    super.dispose();
   }
 
   Future<void> _loadMedicines() async {
@@ -128,12 +123,10 @@ class _VisitInputScreenState extends State<VisitInputScreen> {
     }
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isSaving = true);
-
+  @override
+  Future<void> saveEntity() async {
     final visit = Visit(
-      id: widget.visit?.id,
+      id: widget.entity?.id,
       tanggal: _tanggal.text.trim(),
       site: _site.text.trim(),
       nama: _nama.text.trim(),
@@ -149,403 +142,128 @@ class _VisitInputScreenState extends State<VisitInputScreen> {
       keterangan: _keterangan.text.trim(),
     );
 
-    try {
-      int visitId;
-      if (_isEdit) {
-        await _db.updateVisit(visit);
-        visitId = visit.id!;
+    int visitId;
+    if (isEdit) {
+      await _db.updateVisit(visit);
+      visitId = visit.id!;
+    } else {
+      visitId = await _db.insertVisit(visit);
+    }
+
+    // ── Handle resep kunjungan ─────────────────────────────────────────
+    if (_withPrescription && _rxItems.isNotEmpty) {
+      final rx = VisitPrescription(
+        id: _existingRx?.prescription.id,
+        visitId: visitId,
+        tanggal: _tanggal.text.trim(),
+        catatan: _rxCatatan,
+      );
+
+      if (_existingRx != null) {
+        await _db.updateVisitPrescription(rx, _rxItems);
       } else {
-        visitId = await _db.insertVisit(visit);
+        await _db.insertVisitPrescription(rx, _rxItems);
       }
-
-      // ── Handle resep kunjungan ─────────────────────────────────────────
-      if (_withPrescription && _rxItems.isNotEmpty) {
-        final rx = VisitPrescription(
-          id: _existingRx?.prescription.id,
-          visitId: visitId,
-          tanggal: _tanggal.text.trim(),
-          catatan: _rxCatatan,
-        );
-
-        if (_existingRx != null) {
-          await _db.updateVisitPrescription(rx, _rxItems);
-        } else {
-          await _db.insertVisitPrescription(rx, _rxItems);
-        }
-      } else if (!_withPrescription && _existingRx != null) {
-        // User matikan toggle → hapus resep lama + kembalikan stok
-        await _db.deleteVisitPrescriptions(visitId);
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _isEdit
-                ? 'Data kunjungan & resep diperbarui'
-                : 'Kunjungan berhasil disimpan',
-          ),
-          backgroundColor: AppTheme.accent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
-      if (Navigator.canPop(context)) Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal menyimpan: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+    } else if (!_withPrescription && _existingRx != null) {
+      // User matikan toggle → hapus resep lama + kembalikan stok
+      await _db.deleteVisitPrescriptions(visitId);
     }
   }
 
-  // ── BUILD ─────────────────────────────────────────────────────────────────
+  @override
+  String getSuccessMessage() =>
+      isEdit
+          ? 'Data kunjungan & resep diperbarui'
+          : 'Kunjungan berhasil disimpan';
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(gradient: AppTheme.bgGradient),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
+  Widget buildForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header
+        Text(
+          isEdit ? 'Edit Kunjungan' : 'Input Kunjungan',
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.textPrimary,
+          ),
+        ),
+        Text(
+          isEdit
+              ? 'Ubah data kunjungan & resep'
+              : 'Isi data kunjungan, diagnosa, dan resep obat',
+          style: const TextStyle(
+            fontSize: 13,
+            color: AppTheme.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // ── Informasi Umum ────────────────────────────────────────────
+        _SectionCard(
+          title: 'Informasi Umum',
+          icon: Icons.badge_rounded,
+          color: AppTheme.primary,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
-              Text(
-                _isEdit ? 'Edit Kunjungan' : 'Input Kunjungan',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              Text(
-                _isEdit
-                    ? 'Ubah data kunjungan & resep'
-                    : 'Isi data kunjungan, diagnosa, dan resep obat',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // ── Informasi Umum ────────────────────────────────────────────
-              _SectionCard(
-                title: 'Informasi Umum',
-                icon: Icons.badge_rounded,
-                color: AppTheme.primary,
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: LabeledTextField(
-                            label: 'Tanggal',
-                            controller: _tanggal,
-                            hint: 'Pilih tanggal',
-                            readOnly: true,
-                            onTap: _pickDate,
-                            validator: (v) => (v == null || v.isEmpty)
-                                ? 'Tanggal wajib diisi'
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: LabeledTextField(
-                            label: 'Site',
-                            controller: _site,
-                            hint: 'Nama site',
-                            validator: (v) =>
-                                (v == null || v.isEmpty) ? 'Wajib' : null,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: LabeledTextField(
-                            label: 'Departemen',
-                            controller: _departemen,
-                            hint: 'Nama departemen',
-                            validator: (v) =>
-                                (v == null || v.isEmpty) ? 'Wajib' : null,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: LabeledTextField(
-                            label: 'Posisi / Jabatan',
-                            controller: _posisi,
-                            hint: 'Contoh: Operator, Supervisor',
-                            validator: (v) =>
-                                (v == null || v.isEmpty) ? 'Wajib' : null,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: LabeledTextField(
-                            label: 'Nama',
-                            controller: _nama,
-                            hint: 'Nama lengkap',
-                            validator: (v) => (v == null || v.isEmpty)
-                                ? 'Nama wajib diisi'
-                                : null,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // ── Keluhan & Diagnosa ────────────────────────────────────────
-              _SectionCard(
-                title: 'Keluhan & Diagnosa',
-                icon: Icons.medical_services_rounded,
-                color: const Color(0xFF7E3AF2),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: LabeledTextField(
-                        label: 'Keluhan',
-                        controller: _keluhan,
-                        hint: 'Deskripsikan keluhan pasien',
-                        // maxLines: 3,
-                        validator: (v) => (v == null || v.isEmpty)
-                            ? 'Keluhan wajib diisi'
-                            : null,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: LabeledTextField(
-                        label: 'Diagnosa',
-                        controller: _diagnosa,
-                        hint: 'Masukkan diagnosa',
-                        validator: (v) => (v == null || v.isEmpty)
-                            ? 'Diagnosa wajib diisi'
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // ── Vital Sign ────────────────────────────────────────────────
-              _SectionCard(
-                title: 'Vital Sign',
-                icon: Icons.monitor_heart_rounded,
-                color: Colors.red,
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _numField(
-                            'Jam Tidur (jam)',
-                            _jamTidur,
-                            hint: '7.5',
-                            isDecimal: true,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _numField(
-                            'Suhu Badan (°C)',
-                            _suhu,
-                            hint: '36.5',
-                            isDecimal: true,
-                          ),
-                        ),
-                      ],
-                    ),
-                    OhFieldLabel(
-                      label: 'Tekanan Darah (mmHg)',
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _tdSistolik,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              decoration: const InputDecoration(
-                                hintText: 'Sistolik',
-                              ),
-                              validator: (v) =>
-                                  (v == null || v.isEmpty) ? 'Wajib' : null,
-                            ),
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8),
-                            child: Text(
-                              '/',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textSecondary,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: TextFormField(
-                              controller: _tdDiastolik,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              decoration: const InputDecoration(
-                                hintText: 'Diastolik',
-                              ),
-                              validator: (v) =>
-                                  (v == null || v.isEmpty) ? 'Wajib' : null,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _numField(
-                            'Pernapasan (x/mnt)',
-                            _pernapasan,
-                            hint: '18',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _numField('Nadi (x/mnt)', _nadi, hint: '80'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // ── Resep Obat ────────────────────────────────────────────────
-              _SectionCard(
-                title: 'Resep Obat',
-                icon: Icons.medication_rounded,
-                color: AppTheme.accent,
-                trailing: Switch(
-                  value: _withPrescription,
-                  activeColor: AppTheme.primary,
-                  onChanged: (v) => setState(() => _withPrescription = v),
-                ),
-                child: _withPrescription
-                    ? (_medicines.isEmpty
-                          ? Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.06),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(
-                                children: const [
-                                  Icon(
-                                    Icons.warning_amber_rounded,
-                                    color: Colors.orange,
-                                    size: 18,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Belum ada data obat. Tambahkan di menu Farmasi terlebih dahulu.',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.orange,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          // Reuse PrescriptionForm dengan adapter
-                          : _VisitPrescriptionFormAdapter(
-                              medicines: _medicines,
-                              initialItems: _rxItems,
-                              initialCatatan: _rxCatatan,
-                              onItemsChanged: (items) =>
-                                  setState(() => _rxItems = items),
-                              onCatatanChanged: (v) => _rxCatatan = v,
-                            ))
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          'Aktifkan toggle untuk menambahkan resep obat.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppTheme.textSecondary.withOpacity(0.6),
-                          ),
-                        ),
-                      ),
-              ),
-              const SizedBox(height: 14),
-
-              // ── Keterangan ────────────────────────────────────────────────
-              _SectionCard(
-                title: 'Keterangan',
-                icon: Icons.notes_rounded,
-                color: Colors.grey,
-                child: LabeledTextField(
-                  label: 'Keterangan',
-                  controller: _keterangan,
-                  hint: 'Catatan tambahan (opsional)',
-                  maxLines: 3,
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // ── Tombol ────────────────────────────────────────────────────
               Row(
                 children: [
-                  if (!_isEdit) ...[
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _isSaving ? null : _resetForm,
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text('Reset'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
                   Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      onPressed: _isSaving ? null : _submit,
-                      icon: _isSaving
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.save_rounded, size: 18),
-                      label: Text(_isEdit ? 'Update Data' : 'Simpan Kunjungan'),
+                    child: LabeledTextField(
+                      label: 'Tanggal',
+                      controller: _tanggal,
+                      hint: 'Pilih tanggal',
+                      readOnly: true,
+                      onTap: _pickDate,
+                      validator: (v) => (v == null || v.isEmpty)
+                          ? 'Tanggal wajib diisi'
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: LabeledTextField(
+                      label: 'Site',
+                      controller: _site,
+                      hint: 'Nama site',
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Wajib' : null,
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: LabeledTextField(
+                      label: 'Departemen',
+                      controller: _departemen,
+                      hint: 'Nama departemen',
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Wajib' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: LabeledTextField(
+                      label: 'Posisi / Jabatan',
+                      controller: _posisi,
+                      hint: 'Contoh: Operator, Supervisor',
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Wajib' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: LabeledTextField(
+                      label: 'Nama',
+                      controller: _nama,
+                      hint: 'Nama lengkap',
+                      validator: (v) => (v == null || v.isEmpty)
+                          ? 'Nama wajib diisi'
+                          : null,
                     ),
                   ),
                 ],
@@ -553,12 +271,253 @@ class _VisitInputScreenState extends State<VisitInputScreen> {
             ],
           ),
         ),
-      ),
+        const SizedBox(height: 14),
+
+        // ── Keluhan & Diagnosa ────────────────────────────────────────
+        _SectionCard(
+          title: 'Keluhan & Diagnosa',
+          icon: Icons.medical_services_rounded,
+          color: const Color(0xFF7E3AF2),
+          child: Row(
+            children: [
+              Expanded(
+                child: LabeledTextField(
+                  label: 'Keluhan',
+                  controller: _keluhan,
+                  hint: 'Deskripsikan keluhan pasien',
+                  // maxLines: 3,
+                  validator: (v) => (v == null || v.isEmpty)
+                      ? 'Keluhan wajib diisi'
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: LabeledTextField(
+                  label: 'Diagnosa',
+                  controller: _diagnosa,
+                  hint: 'Masukkan diagnosa',
+                  validator: (v) => (v == null || v.isEmpty)
+                      ? 'Diagnosa wajib diisi'
+                      : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // ── Vital Sign ────────────────────────────────────────────────
+        _SectionCard(
+          title: 'Vital Sign',
+          icon: Icons.monitor_heart_rounded,
+          color: Colors.red,
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _numField(
+                      'Jam Tidur (jam)',
+                      _jamTidur,
+                      hint: '7.5',
+                      isDecimal: true,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _numField(
+                      'Suhu Badan (°C)',
+                      _suhu,
+                      hint: '36.5',
+                      isDecimal: true,
+                    ),
+                  ),
+                ],
+              ),
+              OhFieldLabel(
+                label: 'Tekanan Darah (mmHg)',
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _tdSistolik,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          hintText: 'Sistolik',
+                        ),
+                        validator: (v) =>
+                            (v == null || v.isEmpty) ? 'Wajib' : null,
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        '/',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _tdDiastolik,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          hintText: 'Diastolik',
+                        ),
+                        validator: (v) =>
+                            (v == null || v.isEmpty) ? 'Wajib' : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _numField(
+                      'Pernapasan (x/mnt)',
+                      _pernapasan,
+                      hint: '18',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _numField('Nadi (x/mnt)', _nadi, hint: '80'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // ── Resep Obat ────────────────────────────────────────────────
+        _SectionCard(
+          title: 'Resep Obat',
+          icon: Icons.medication_rounded,
+          color: AppTheme.accent,
+          trailing: Switch(
+            value: _withPrescription,
+            activeColor: AppTheme.primary,
+            onChanged: (v) => setState(() => _withPrescription = v),
+          ),
+          child: _withPrescription
+              ? (_medicines.isEmpty
+                    ? Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: const [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orange,
+                              size: 18,
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Belum ada data obat. Tambahkan di menu Farmasi terlebih dahulu.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    // Reuse PrescriptionForm dengan adapter
+                    : _VisitPrescriptionFormAdapter(
+                        medicines: _medicines,
+                        initialItems: _rxItems,
+                        initialCatatan: _rxCatatan,
+                        onItemsChanged: (items) =>
+                            setState(() => _rxItems = items),
+                        onCatatanChanged: (v) => _rxCatatan = v,
+                      ))
+              : Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'Aktifkan toggle untuk menambahkan resep obat.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textSecondary.withOpacity(0.6),
+                    ),
+                  ),
+                ),
+        ),
+        const SizedBox(height: 14),
+
+        // ── Keterangan ────────────────────────────────────────────────
+        _SectionCard(
+          title: 'Keterangan',
+          icon: Icons.notes_rounded,
+          color: Colors.grey,
+          child: LabeledTextField(
+            label: 'Keterangan',
+            controller: _keterangan,
+            hint: 'Catatan tambahan (opsional)',
+            maxLines: 3,
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // ── Tombol ────────────────────────────────────────────────────
+        Row(
+          children: [
+            if (!isEdit) ...[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: isSaving ? null : _resetForm,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Reset'),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              flex: 2,
+              child: ElevatedButton.icon(
+                onPressed: isSaving ? null : submit,
+                icon: isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save_rounded, size: 18),
+                label: Text(isEdit ? 'Update Data' : 'Simpan Kunjungan'),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
   void _resetForm() {
-    _formKey.currentState?.reset();
+    formKey.currentState?.reset();
     for (final c in [
       _tanggal,
       _site,

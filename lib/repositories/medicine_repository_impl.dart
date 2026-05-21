@@ -4,10 +4,9 @@ import 'medicine_repository.dart';
 import 'db_provider.dart';
 
 class MedicineRepositoryImpl implements MedicineRepository {
-  static final MedicineRepositoryImpl _instance =
-      MedicineRepositoryImpl._internal();
-  factory MedicineRepositoryImpl() => _instance;
-  MedicineRepositoryImpl._internal();
+  static final MedicineRepositoryImpl _i = MedicineRepositoryImpl._();
+  factory MedicineRepositoryImpl() => _i;
+  MedicineRepositoryImpl._();
 
   Future<Database> get _db => DbProvider.instance.database;
 

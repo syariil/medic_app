@@ -1,7 +1,10 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
+import '../constants.dart';
+import '../error_handler.dart';
 
 class DbProvider {
   DbProvider._();
@@ -27,6 +30,14 @@ class DbProvider {
 
   Future<void> _onCreate(Database db, int _) async {
     for (final sql in _activeDDL) await db.execute(sql);
+    // Create indexes for frequently queried columns
+    for (final idx in DbIndexes.getAll()) {
+      try {
+        await db.execute(idx);
+      } catch (e) {
+        ErrorHandler.logWarning('Failed to create index: $idx', tag: 'DbIndexes');
+      }
+    }
   }
 
   Future<void> _onUpgrade(Database db, int old, int newV) async {
@@ -68,7 +79,12 @@ class DbProvider {
   Future<void> _safe(Database db, String sql) async {
     try {
       await db.execute(sql);
-    } catch (_) {}
+    } catch (e) {
+      ErrorHandler.logWarning(
+        'Failed to execute migration SQL: $sql',
+        tag: 'DbMigration',
+      );
+    }
   }
 
   // ── DDL aktif ─────────────────────────────────────────────────────────────

@@ -1,8 +1,10 @@
 import 'package:sqflite/sqflite.dart';
 import '../models/visit_prescription.dart';
+import '../error_handler.dart';
 import 'db_provider.dart';
+import 'visit_prescription_repository.dart';
 
-class VisitPrescriptionRepositoryImpl {
+class VisitPrescriptionRepositoryImpl implements VisitPrescriptionRepository {
   static final VisitPrescriptionRepositoryImpl _i =
       VisitPrescriptionRepositoryImpl._();
   factory VisitPrescriptionRepositoryImpl() => _i;
@@ -12,6 +14,7 @@ class VisitPrescriptionRepositoryImpl {
 
   // ── Insert — stok otomatis berkurang ─────────────────────────────────────
 
+  @override
   Future<int> insertWithItems(
     VisitPrescription prescription,
     List<VisitPrescriptionItem> items,
@@ -37,6 +40,7 @@ class VisitPrescriptionRepositoryImpl {
 
   // ── Get by visit ─────────────────────────────────────────────────────────
 
+  @override
   Future<List<VisitPrescriptionWithItems>> getByVisit(int visitId) async {
     final db = await _db;
     final rows = await db.query(
@@ -49,6 +53,32 @@ class VisitPrescriptionRepositoryImpl {
       final p = VisitPrescription.fromMap(row);
       final items = await _getItems(db, p.id!);
       result.add(VisitPrescriptionWithItems(prescription: p, items: items));
+    }
+    return result;
+  }
+
+  /// Batch query untuk multiple visit IDs - efficient untuk menghindari N+1 problem
+  @override
+  Future<Map<int, List<VisitPrescriptionWithItems>>> getByVisitIds(
+    List<int> visitIds,
+  ) async {
+    if (visitIds.isEmpty) return {};
+
+    final db = await _db;
+    final placeholders = List.filled(visitIds.length, '?').join(',');
+    final rows = await db.rawQuery(
+      'SELECT * FROM visit_prescriptions WHERE visit_id IN ($placeholders)',
+      visitIds,
+    );
+
+    final result = <int, List<VisitPrescriptionWithItems>>{};
+    for (final row in rows) {
+      final p = VisitPrescription.fromMap(row);
+      final items = await _getItems(db, p.id!);
+      final visitId = p.visitId;
+      result
+          .putIfAbsent(visitId, () => [])
+          .add(VisitPrescriptionWithItems(prescription: p, items: items));
     }
     return result;
   }
@@ -67,6 +97,7 @@ class VisitPrescriptionRepositoryImpl {
 
   // ── Update — rollback stok lama, kurangi stok baru ───────────────────────
 
+  @override
   Future<void> updateWithItems(
     VisitPrescription prescription,
     List<VisitPrescriptionItem> items,
@@ -109,6 +140,7 @@ class VisitPrescriptionRepositoryImpl {
 
   // ── Delete — kembalikan stok ──────────────────────────────────────────────
 
+  @override
   Future<void> deleteByVisit(int visitId) async {
     final db = await _db;
     await db.transaction((txn) async {
@@ -142,6 +174,7 @@ class VisitPrescriptionRepositoryImpl {
 
   // ── Usage stat — untuk dashboard ─────────────────────────────────────────
 
+  @override
   Future<Map<String, int>> getMedicineUsageStat({
     String? startDate,
     String? endDate,

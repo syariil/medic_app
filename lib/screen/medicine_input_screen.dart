@@ -4,17 +4,19 @@ import '../models/medicine.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../components/form/labeled_text_field.dart';
+import 'base_input_screen.dart';
+import '../validators.dart';
 
-class MedicineInputScreen extends StatefulWidget {
-  final Medicine? medicine;
-  const MedicineInputScreen({super.key, this.medicine});
+class MedicineInputScreen extends InputScreenBase<Medicine> {
+  const MedicineInputScreen({super.key, Medicine? medicine})
+    : super(entity: medicine);
 
   @override
   State<MedicineInputScreen> createState() => _MedicineInputScreenState();
 }
 
-class _MedicineInputScreenState extends State<MedicineInputScreen> {
-  final _formKey = GlobalKey<FormState>();
+class _MedicineInputScreenState
+    extends _InputScreenBaseState<Medicine, MedicineInputScreen> {
   final _nama = TextEditingController();
   final _kategori = TextEditingController();
   final _satuan = TextEditingController();
@@ -22,9 +24,15 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
   final _keterangan = TextEditingController();
 
   final _db = DatabaseService();
-  bool _isSaving = false;
 
-  bool get _isEdit => widget.medicine != null;
+  @override
+  void disposeControllers() {
+    _nama.dispose();
+    _kategori.dispose();
+    _satuan.dispose();
+    _stok.dispose();
+    _keterangan.dispose();
+  }
 
   // Preset kategori & satuan
   static const _kategoriList = [
@@ -54,37 +62,24 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
   @override
   void initState() {
     super.initState();
-    if (_isEdit) {
-      _nama.text = widget.medicine!.nama;
-      _kategori.text = widget.medicine!.kategori;
-      _satuan.text = widget.medicine!.satuan;
-      _stok.text = widget.medicine!.stok.toString();
-      _keterangan.text = widget.medicine!.keterangan;
-      _selectedKategori = _kategoriList.contains(widget.medicine!.kategori)
-          ? widget.medicine!.kategori
-          : null;
-      _selectedSatuan = _satuanList.contains(widget.medicine!.satuan)
-          ? widget.medicine!.satuan
-          : null;
+    if (isEdit) {
+      final m = widget.entity as Medicine;
+      _nama.text = m.nama;
+      _kategori.text = m.kategori;
+      _satuan.text = m.satuan;
+      _stok.text = m.stok.toString();
+      _keterangan.text = m.keterangan;
+      _selectedKategori = _kategoriList.contains(m.kategori) ? m.kategori : null;
+      _selectedSatuan = _satuanList.contains(m.satuan) ? m.satuan : null;
     }
   }
 
+
+
   @override
-  void dispose() {
-    _nama.dispose();
-    _kategori.dispose();
-    _satuan.dispose();
-    _stok.dispose();
-    _keterangan.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isSaving = true);
-
+  Future<void> saveEntity() async {
     final medicine = Medicine(
-      id: widget.medicine?.id,
+      id: widget.entity?.id,
       nama: _nama.text.trim(),
       kategori: _kategori.text.trim(),
       satuan: _satuan.text.trim(),
@@ -92,35 +87,10 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
       keterangan: _keterangan.text.trim(),
     );
 
-    try {
-      _isEdit
-          ? await _db.updateMedicine(medicine)
-          : await _db.insertMedicine(medicine);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _isEdit ? 'Data obat diperbarui' : 'Obat berhasil disimpan',
-          ),
-          backgroundColor: AppTheme.accent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
-      if (Navigator.canPop(context)) Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal menyimpan: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+    if (isEdit) {
+      await _db.updateMedicine(medicine);
+    } else {
+      await _db.insertMedicine(medicine);
     }
   }
 
@@ -134,7 +104,7 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _isEdit ? 'Edit Data Obat' : 'Tambah Obat Baru',
+              isEdit ? 'Edit Data Obat' : 'Tambah Obat Baru',
               style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
@@ -143,7 +113,7 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              _isEdit ? 'Ubah informasi obat' : 'Isi data obat dengan lengkap',
+              isEdit ? 'Ubah informasi obat' : 'Isi data obat dengan lengkap',
               style: const TextStyle(
                 fontSize: 13,
                 color: AppTheme.textSecondary,
@@ -159,7 +129,7 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
                 boxShadow: AppTheme.cardShadow,
               ),
               child: Form(
-                key: _formKey,
+                key: formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -167,9 +137,7 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
                       label: 'Nama Obat',
                       controller: _nama,
                       hint: 'Contoh: Paracetamol 500mg',
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Nama obat tidak boleh kosong'
-                          : null,
+                      validator: (v) => Validators.name(v),
                     ),
 
                     // ── Kategori picker ───────────────────────────────────────
@@ -182,9 +150,7 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
                         _selectedKategori = v;
                         _kategori.text = v;
                       }),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Pilih atau isi kategori'
-                          : null,
+                      validator: (v) => Validators.required(v, fieldName: 'Kategori'),
                     ),
 
                     const SizedBox(height: 14),
@@ -199,9 +165,7 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
                         _selectedSatuan = v;
                         _satuan.text = v;
                       }),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Pilih atau isi satuan'
-                          : null,
+                      validator: (v) => Validators.required(v, fieldName: 'Satuan'),
                     ),
 
                     const SizedBox(height: 14),
@@ -246,13 +210,13 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
 
                     Row(
                       children: [
-                        if (!_isEdit) ...[
+                        if (!isEdit) ...[
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: _isSaving
+                              onPressed: isSaving
                                   ? null
                                   : () {
-                                      _formKey.currentState?.reset();
+                                      formKey.currentState?.reset();
                                       _nama.clear();
                                       _kategori.clear();
                                       _satuan.clear();
@@ -279,8 +243,8 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
                         Expanded(
                           flex: 2,
                           child: ElevatedButton(
-                            onPressed: _isSaving ? null : _submit,
-                            child: _isSaving
+                            onPressed: isSaving ? null : submit,
+                            child: isSaving
                                 ? const SizedBox(
                                     width: 20,
                                     height: 20,
@@ -289,7 +253,7 @@ class _MedicineInputScreenState extends State<MedicineInputScreen> {
                                       color: Colors.white,
                                     ),
                                   )
-                                : Text(_isEdit ? 'Update Data' : 'Simpan Obat'),
+                                : Text(isEdit ? 'Update Data' : 'Simpan Obat'),
                           ),
                         ),
                       ],
